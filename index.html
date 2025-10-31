@@ -86,11 +86,43 @@
             background-color: #28a745;
             padding: 12px 30px;
             font-size: 16px;
-            display: block;
-            margin: 20px auto;
+            display: inline-block;
+            margin: 20px 10px;
         }
         .copy-btn:hover {
             background-color: #218838;
+        }
+        .refresh-btn {
+            background-color: #17a2b8;
+            padding: 12px 30px;
+            font-size: 16px;
+            display: inline-block;
+            margin: 20px 10px;
+        }
+        .refresh-btn:hover {
+            background-color: #138496;
+        }
+        
+        .sticky-copy-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        .sticky-copy-btn:hover {
+            background-color: #218838;
+        }
+        .sticky-copy-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
         }
         .metadata-row:hover {
             background-color: #f8f9fa;
@@ -121,6 +153,10 @@
         .checkbox-cell input[type="checkbox"] {
             transform: scale(1.2);
         }
+        
+        .metadata-different {
+            background-color: #fff3cd;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +165,7 @@
         
         <div class="action-section">
             <button id="copyBtn" class="copy-btn" disabled>Copiar Metadatos Seleccionados</button>
+            <button id="refreshBtn" class="refresh-btn">Actualizar Vista</button>
             <div class="loading" id="copyLoading" style="display: none;">Copiando metadatos...</div>
         </div>
         
@@ -142,6 +179,11 @@
                     <th class="column-header">
                         <div class="file-info">
                             <button id="selectSourceBtn">Cargar Archivo Origen</button>
+                            <button id="loadTemplateBtn" style="margin-left: 10px;">Cargar template 360</button>
+                            <div style="margin-top: 10px;">
+                                <input type="checkbox" id="make360Checkbox">
+                                <label for="make360Checkbox">Hacer 360</label>
+                            </div>
                             <div id="sourcePath" class="file-path">No seleccionado</div>
                         </div>
                     </th>
@@ -164,7 +206,11 @@
             <h3>Resultado de la Copia</h3>
             <div id="resultMessage"></div>
         </div>
+        
     </div>
+
+    <!-- Sticky Copy Button -->
+    <button id="stickyCopyBtn" class="sticky-copy-btn" disabled>Copiar Metadatos</button>
 
     <script src="renderer.js"></script>
 </body>

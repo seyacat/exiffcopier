@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 let mainWindow;
 
@@ -93,6 +94,13 @@ ipcMain.handle('write-metadata', async (event, { sourcePath, targetPath, selecte
     
     const updates = {};
     
+    // Only filter truly problematic metadata keys that are known to cause issues
+    const problematicKeys = [
+        'ExifToolVersion', 'FileAccessDate', 'FileName', 'FileSize', 'FileType',
+        'FileTypeExtension', 'MIMEType', 'Megapixels', 'SourceFile', 'errors'
+    ];
+    
+    
     for (const key of selectedMetadata) {
         if (sourceTags[key] !== null && sourceTags[key] !== undefined) {
             const sourceValue = sourceTags[key];
@@ -101,12 +109,31 @@ ipcMain.handle('write-metadata', async (event, { sourcePath, targetPath, selecte
             result.sourceMetadata[key] = Array.isArray(sourceValue) ? sourceValue.join(', ') : sourceValue.toString();
             result.targetMetadata[key] = Array.isArray(targetValue) ? targetValue.join(', ') : targetValue.toString();
             
-            // Convert boolean values to strings to avoid IPC serialization issues
-            if (typeof sourceValue === 'boolean') {
-                updates[key] = sourceValue.toString();
-            } else {
-                updates[key] = sourceValue;
+            // Skip only truly problematic metadata keys
+            if (problematicKeys.includes(key)) {
+                console.log(`Saltando metadato problemático: ${key}`);
+                result.failed.push(key);
+                continue;
             }
+            
+            
+            // Recode metadata values for better compatibility
+            let recodedValue;
+            
+            if (typeof sourceValue === 'boolean') {
+                recodedValue = sourceValue.toString();
+            } else if (Array.isArray(sourceValue)) {
+                recodedValue = sourceValue.join(', ');
+            } else if (typeof sourceValue === 'object' && sourceValue !== null) {
+                recodedValue = JSON.stringify(sourceValue);
+            } else if (typeof sourceValue === 'number') {
+                // Convert numbers to strings to avoid precision issues
+                recodedValue = sourceValue.toString();
+            } else {
+                recodedValue = sourceValue;
+            }
+            
+            updates[key] = recodedValue;
             result.copied.push(key);
         } else {
             result.failed.push(key);
@@ -120,25 +147,9 @@ ipcMain.handle('write-metadata', async (event, { sourcePath, targetPath, selecte
             console.log('Metadatos escritos exitosamente');
         } catch (writeError) {
             console.error('Error al escribir metadatos:', writeError.message);
-            
-            // If there's a write error, try to write each tag individually
-            // to identify which specific tags are causing issues
-            const successfulTags = [];
-            const failedTags = [];
-            
-            for (const [tagKey, tagValue] of Object.entries(updates)) {
-                try {
-                    await exiftool.write(targetPath, { [tagKey]: tagValue }, ['-overwrite_original']);
-                    successfulTags.push(tagKey);
-                } catch (individualError) {
-                    console.warn(`No se pudo escribir el tag ${tagKey}:`, individualError.message);
-                    failedTags.push(tagKey);
-                }
-            }
-            
-            // Update the result to reflect individual tag successes/failures
-            result.copied = result.copied.filter(tag => successfulTags.includes(tag));
-            result.failed = [...result.failed, ...failedTags];
+            // If write fails, mark all attempted tags as failed
+            result.failed = [...result.failed, ...Object.keys(updates)];
+            result.copied = [];
         }
     } else {
         console.log('No hay metadatos para escribir');
@@ -150,4 +161,34 @@ ipcMain.handle('write-metadata', async (event, { sourcePath, targetPath, selecte
     console.error(`Error al copiar metadatos:`, error.message);
     return { success: false, error: error.message };
   }
+});
+
+// Handler for running spatial 360 process
+ipcMain.handle('run-spatial-360', async (event, { targetPath }) => {
+    try {
+        console.log(`Ejecutando proceso spatial 360 en: ${targetPath}`);
+        
+        // Import the SpatialMediaInjector class
+        const SpatialMediaInjector = require('./add_spatial_3d.js');
+        const injector = new SpatialMediaInjector();
+        
+        // Create a temporary output path
+        const path = require('path');
+        const tempOutputPath = targetPath.replace(/\.[^/.]+$/, '') + '_360_temp.mp4';
+        
+        // Run spatial media injection for mono (360 video)
+        await injector.injectSpatialMetadata(targetPath, tempOutputPath, 'mono');
+        
+        // Replace original file with the processed one
+        const fs = require('fs');
+        fs.unlinkSync(targetPath);
+        fs.renameSync(tempOutputPath, targetPath);
+        
+        console.log('Proceso spatial 360 completado exitosamente');
+        return { success: true };
+        
+    } catch (error) {
+        console.error(`Error en proceso spatial 360:`, error.message);
+        return { success: false, error: error.message };
+    }
 });

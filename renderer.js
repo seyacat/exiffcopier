@@ -8,7 +8,11 @@ let targetMetadata = {};
 const selectSourceBtn = document.getElementById('selectSourceBtn');
 const selectTargetBtn = document.getElementById('selectTargetBtn');
 const copyBtn = document.getElementById('copyBtn');
+const refreshBtn = document.getElementById('refreshBtn');
 const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+const stickyCopyBtn = document.getElementById('stickyCopyBtn');
+const loadTemplateBtn = document.getElementById('loadTemplateBtn');
+const make360Checkbox = document.getElementById('make360Checkbox');
 
 if (selectSourceBtn) {
     selectSourceBtn.addEventListener('click', selectSourceFile);
@@ -19,8 +23,17 @@ if (selectTargetBtn) {
 if (copyBtn) {
     copyBtn.addEventListener('click', copyMetadata);
 }
+if (refreshBtn) {
+    refreshBtn.addEventListener('click', refreshMetadata);
+}
 if (selectAllCheckbox) {
     selectAllCheckbox.addEventListener('change', toggleAllCheckboxes);
+}
+if (stickyCopyBtn) {
+    stickyCopyBtn.addEventListener('click', copyMetadata);
+}
+if (loadTemplateBtn) {
+    loadTemplateBtn.addEventListener('click', load360Template);
 }
 
 async function selectSourceFile() {
@@ -71,6 +84,7 @@ async function selectTargetFile() {
     }
 }
 
+
 async function loadSourceMetadata() {
     if (!sourceFilePath) return;
 
@@ -109,12 +123,26 @@ async function loadSourceMetadata() {
 async function loadTargetMetadata() {
     if (!targetFilePath) return;
 
+    // Preserve currently selected metadata before re-rendering
+    const previouslySelected = getSelectedMetadata();
+
     try {
         const result = await ipcRenderer.invoke('read-metadata', targetFilePath);
         
         if (result.success) {
             targetMetadata = result.metadata;
             renderMetadataTable();
+            
+            // Restore previously selected checkboxes after rendering
+            setTimeout(() => {
+                previouslySelected.forEach(key => {
+                    const checkbox = document.getElementById(`meta-${key}`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                });
+                updateCopyButton();
+            }, 100);
         } else {
             showError('Error al leer metadatos del destino: ' + result.error);
             targetMetadata = {};
@@ -195,13 +223,25 @@ function renderMetadataTable() {
 
         const sourceValueCell = document.createElement('td');
         sourceValueCell.className = 'metadata-value';
-        sourceValueCell.textContent = sourceMetadata[metadataKey] || 'No disponible';
+        const sourceValue = sourceMetadata[metadataKey] || 'No disponible';
+        sourceValueCell.textContent = sourceValue;
         row.appendChild(sourceValueCell);
 
         const targetValueCell = document.createElement('td');
         targetValueCell.className = 'metadata-value';
-        targetValueCell.textContent = targetMetadata[metadataKey] || 'No disponible';
+        const targetValue = targetMetadata[metadataKey] || 'No disponible';
+        targetValueCell.textContent = targetValue;
         row.appendChild(targetValueCell);
+
+        // Highlight cells with different values or when one is "No disponible"
+        if (sourceValue !== targetValue) {
+            if ((sourceValue !== 'No disponible' && targetValue === 'No disponible') ||
+                (sourceValue === 'No disponible' && targetValue !== 'No disponible') ||
+                (sourceValue !== 'No disponible' && targetValue !== 'No disponible')) {
+                sourceValueCell.classList.add('metadata-different');
+                targetValueCell.classList.add('metadata-different');
+            }
+        }
 
         bodyElement.appendChild(row);
     });
@@ -246,14 +286,37 @@ function updateCopyButton() {
     }
     
     const hasSelectedMetadata = getSelectedMetadata().length > 0;
+    const isEnabled = sourceFilePath && targetFilePath && hasSelectedMetadata;
     
-    copyBtn.disabled = !(sourceFilePath && targetFilePath && hasSelectedMetadata);
+    copyBtn.disabled = !isEnabled;
+    
+    // Update sticky copy button as well
+    if (stickyCopyBtn) {
+        stickyCopyBtn.disabled = !isEnabled;
+    }
     
     // Hide loading message when not copying
     const loadingElement = document.getElementById('copyLoading');
     if (loadingElement && loadingElement.style) {
         loadingElement.style.display = 'none';
     }
+}
+
+async function refreshMetadata() {
+    console.log('Actualizando vista de metadatos...');
+    
+    // Reload metadata for both files
+    if (sourceFilePath) {
+        await loadSourceMetadata();
+    }
+    if (targetFilePath) {
+        await loadTargetMetadata();
+    }
+    
+    // Re-render the table to show updated values
+    renderMetadataTable();
+    
+    console.log('Vista de metadatos actualizada');
 }
 
 async function copyMetadata() {
@@ -280,12 +343,26 @@ async function copyMetadata() {
             selectedMetadata: selectedMetadata
         });
 
-        if (result.success) {
-            showResults(result.result);
-            await loadTargetMetadata();
-        } else {
-            showError('Error al copiar metadatos: ' + result.error);
+    if (result.success) {
+        // Run spatial 360 process if checkbox is checked
+        if (make360Checkbox && make360Checkbox.checked) {
+            console.log('Ejecutando proceso spatial 360...');
+            const spatialResult = await ipcRenderer.invoke('run-spatial-360', {
+                targetPath: targetFilePath
+            });
+            
+            if (spatialResult.success) {
+                console.log('Proceso spatial 360 completado exitosamente');
+            } else {
+                console.error('Error en proceso spatial 360:', spatialResult.error);
+            }
         }
+        
+        showResults(result.result);
+        await loadTargetMetadata();
+    } else {
+        showError('Error al copiar metadatos: ' + result.error);
+    }
     } catch (error) {
         showError('Error durante la copia: ' + error.message);
     } finally {
@@ -296,6 +373,13 @@ async function copyMetadata() {
             copyBtn.disabled = false;
         }
         updateCopyButton();
+        
+        // Refresh metadata after copying to show updated values
+        if (result && result.success) {
+            setTimeout(() => {
+                refreshMetadata();
+            }, 500);
+        }
     }
 }
 
@@ -339,6 +423,44 @@ if (metadataBody) {
         updateSelectAllCheckbox();
         updateCopyButton();
     });
+}
+
+function load360Template() {
+    console.log('Cargando template 360...');
+    
+    // Set source file path to indicate template is loaded
+    sourceFilePath = 'template_360';
+    const sourcePathElement = document.getElementById('sourcePath');
+    if (sourcePathElement) {
+        sourcePathElement.textContent = 'Template 360 Cargado';
+    }
+    
+    // Define the 360 metadata template
+    sourceMetadata = {
+        'ProjectionType': 'equirectangular',
+        'Spherical': 'true',
+        'StereoMode': 'mono',
+        'Stitched': 'true',
+        'StitchingSoftware': 'Insta360'
+    };
+    
+    console.log('Template 360 cargado con metadatos:', sourceMetadata);
+    
+    // Render the table with the template metadata
+    renderMetadataTable();
+    updateCopyButton();
+    
+    // Select all template metadata checkboxes
+    setTimeout(() => {
+        const templateMetadataKeys = ['ProjectionType', 'Spherical', 'StereoMode', 'Stitched', 'StitchingSoftware'];
+        templateMetadataKeys.forEach(key => {
+            const checkbox = document.getElementById(`meta-${key}`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+        updateCopyButton();
+    }, 100);
 }
 
 // Initialize the table when the page loads

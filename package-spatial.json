@@ -1,0 +1,15 @@
+{
+  "name": "spatial-3d-injector",
+  "version": "1.0.0",
+  "description": "Script para agregar metadata 3D espacial a videos usando Google spatial-media",
+  "main": "add_spatial_3d.js",
+  "scripts": {
+    "add-3d": "node add_spatial_3d.js",
+    "install-deps": "git clone https://github.com/google/spatial-media.git node_modules/spatial-media"
+  },
+  "keywords": ["3d", "spatial", "metadata", "video", "vr", "360"],
+  "author": "User",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
