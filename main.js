@@ -76,69 +76,105 @@ ipcMain.handle('read-metadata', async (event, filePath) => {
 });
 
 ipcMain.handle('write-metadata', async (event, { sourcePath, targetPath, selectedMetadata }) => {
-  try {
-    const { exiftool } = require('exiftool-vendored');
-    
-    console.log(`Iniciando copia de metadatos de ${sourcePath} a ${targetPath}`);
-    console.log(`Metadatos seleccionados: ${selectedMetadata.join(', ')}`);
-    
-    const sourceTags = await exiftool.read(sourcePath);
-    const targetTags = await exiftool.read(targetPath);
-    
-    const result = {
-      copied: [],
-      failed: [],
-      sourceMetadata: {},
-      targetMetadata: {}
-    };
-    
-    const updates = {};
-    
-    // Only filter truly problematic metadata keys that are known to cause issues
-    const problematicKeys = [
-        'ExifToolVersion', 'FileAccessDate', 'FileName', 'FileSize', 'FileType',
-        'FileTypeExtension', 'MIMEType', 'Megapixels', 'SourceFile', 'errors'
-    ];
-    
-    
-    for (const key of selectedMetadata) {
-        if (sourceTags[key] !== null && sourceTags[key] !== undefined) {
-            const sourceValue = sourceTags[key];
-            const targetValue = targetTags[key] !== null && targetTags[key] !== undefined ? targetTags[key] : 'No disponible';
+    try {
+        const { exiftool } = require('exiftool-vendored');
+        
+        console.log(`Iniciando copia de metadatos de ${sourcePath} a ${targetPath}`);
+        console.log(`Metadatos seleccionados: ${selectedMetadata.join(', ')}`);
+        
+        const targetTags = await exiftool.read(targetPath);
+        
+        const result = {
+            copied: [],
+            failed: [],
+            sourceMetadata: {},
+            targetMetadata: {}
+        };
+        
+        const updates = {};
+        
+        // Only filter truly problematic metadata keys that are known to cause issues
+        const problematicKeys = [
+            'ExifToolVersion', 'FileAccessDate', 'FileName', 'FileSize', 'FileType',
+            'FileTypeExtension', 'MIMEType', 'Megapixels', 'SourceFile', 'errors'
+        ];
+        
+        // Handle template 360 case (no actual source file)
+        if (sourcePath === 'template_360') {
+            console.log('Usando template 360 para metadatos');
             
-            result.sourceMetadata[key] = Array.isArray(sourceValue) ? sourceValue.join(', ') : sourceValue.toString();
-            result.targetMetadata[key] = Array.isArray(targetValue) ? targetValue.join(', ') : targetValue.toString();
+            // Define template 360 metadata values
+            const template360Metadata = {
+                'ProjectionType': 'equirectangular',
+                'Spherical': 'true',
+                'StereoMode': 'mono',
+                'Stitched': 'true',
+                'StitchingSoftware': 'Insta360'
+            };
             
-            // Skip only truly problematic metadata keys
-            if (problematicKeys.includes(key)) {
-                console.log(`Saltando metadato problemático: ${key}`);
-                result.failed.push(key);
-                continue;
+            for (const key of selectedMetadata) {
+                if (template360Metadata[key] !== undefined) {
+                    const sourceValue = template360Metadata[key];
+                    const targetValue = targetTags[key] !== null && targetTags[key] !== undefined ? targetTags[key] : 'No disponible';
+                    
+                    result.sourceMetadata[key] = sourceValue;
+                    result.targetMetadata[key] = Array.isArray(targetValue) ? targetValue.join(', ') : targetValue.toString();
+                    
+                    // Skip only truly problematic metadata keys
+                    if (problematicKeys.includes(key)) {
+                        console.log(`Saltando metadato problemático: ${key}`);
+                        result.failed.push(key);
+                        continue;
+                    }
+                    
+                    updates[key] = sourceValue;
+                    result.copied.push(key);
+                } else {
+                    result.failed.push(key);
+                }
             }
-            
-            
-            // Recode metadata values for better compatibility
-            let recodedValue;
-            
-            if (typeof sourceValue === 'boolean') {
-                recodedValue = sourceValue.toString();
-            } else if (Array.isArray(sourceValue)) {
-                recodedValue = sourceValue.join(', ');
-            } else if (typeof sourceValue === 'object' && sourceValue !== null) {
-                recodedValue = JSON.stringify(sourceValue);
-            } else if (typeof sourceValue === 'number') {
-                // Convert numbers to strings to avoid precision issues
-                recodedValue = sourceValue.toString();
-            } else {
-                recodedValue = sourceValue;
-            }
-            
-            updates[key] = recodedValue;
-            result.copied.push(key);
         } else {
-            result.failed.push(key);
+            // Handle normal file source case
+            const sourceTags = await exiftool.read(sourcePath);
+            
+            for (const key of selectedMetadata) {
+                if (sourceTags[key] !== null && sourceTags[key] !== undefined) {
+                    const sourceValue = sourceTags[key];
+                    const targetValue = targetTags[key] !== null && targetTags[key] !== undefined ? targetTags[key] : 'No disponible';
+                    
+                    result.sourceMetadata[key] = Array.isArray(sourceValue) ? sourceValue.join(', ') : sourceValue.toString();
+                    result.targetMetadata[key] = Array.isArray(targetValue) ? targetValue.join(', ') : targetValue.toString();
+                    
+                    // Skip only truly problematic metadata keys
+                    if (problematicKeys.includes(key)) {
+                        console.log(`Saltando metadato problemático: ${key}`);
+                        result.failed.push(key);
+                        continue;
+                    }
+                    
+                    // Recode metadata values for better compatibility
+                    let recodedValue;
+                    
+                    if (typeof sourceValue === 'boolean') {
+                        recodedValue = sourceValue.toString();
+                    } else if (Array.isArray(sourceValue)) {
+                        recodedValue = sourceValue.join(', ');
+                    } else if (typeof sourceValue === 'object' && sourceValue !== null) {
+                        recodedValue = JSON.stringify(sourceValue);
+                    } else if (typeof sourceValue === 'number') {
+                        // Convert numbers to strings to avoid precision issues
+                        recodedValue = sourceValue.toString();
+                    } else {
+                        recodedValue = sourceValue;
+                    }
+                    
+                    updates[key] = recodedValue;
+                    result.copied.push(key);
+                } else {
+                    result.failed.push(key);
+                }
+            }
         }
-    }
     
     if (Object.keys(updates).length > 0) {
         console.log(`Escribiendo ${Object.keys(updates).length} metadatos al archivo destino`);
@@ -177,7 +213,7 @@ ipcMain.handle('run-spatial-360', async (event, { targetPath }) => {
         const tempOutputPath = targetPath.replace(/\.[^/.]+$/, '') + '_360_temp.mp4';
         
         // Run spatial media injection for mono (360 video)
-        await injector.injectSpatialMetadata(targetPath, tempOutputPath, 'mono');
+        await injector.injectSpatialMetadata(targetPath, tempOutputPath, 'none');
         
         // Replace original file with the processed one
         const fs = require('fs');

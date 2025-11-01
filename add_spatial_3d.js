@@ -88,9 +88,9 @@ class SpatialMediaInjector {
             const args = ['-i', '-2']; // -i para inyectar, -2 para v2 metadata
             
             // Agregar opciones según el modo estereoscópico
-            if (stereoMode === 'mono') {
-                // Para Monoscopic, usar modo 'mono' (modificado en spatial-media)
-                args.push('-s', 'mono');
+            if (stereoMode === 'mono' || stereoMode === 'none') {
+                // Para Monoscopic, usar modo 'none'
+                args.push('-s', 'none');
             } else {
                 args.push('-s', stereoMode);
             }
@@ -169,7 +169,7 @@ class SpatialMediaInjector {
             // Verificar con spatial-media directamente
             await this.checkWithSpatialMedia(filePath);
             
-            console.log(`✅ Video procesado como ${stereoMode === 'mono' ? 'Monoscopic' : 'Stereoscopic3D ' + stereoMode}`);
+            console.log(`✅ Video procesado como ${(stereoMode === 'mono' || stereoMode === 'none') ? 'Monoscopic' : 'Stereoscopic3D ' + stereoMode}`);
             
         } catch (error) {
             console.error('Error verificando metadata:', error.message);
@@ -265,7 +265,7 @@ Ejemplos:
     const [inputPath, outputPath, stereoMode = 'top-bottom'] = args;
     
     // Validar modo estereoscópico
-    const validModes = ['top-bottom', 'left-right', 'mono'];
+    const validModes = ['top-bottom', 'left-right', 'mono', 'none'];
     if (!validModes.includes(stereoMode)) {
         console.error(`Modo estereoscópico inválido: ${stereoMode}`);
         console.error(`Modos válidos: ${validModes.join(', ')}`);
